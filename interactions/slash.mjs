@@ -1,8 +1,9 @@
-const { BaseInteraction, MessageFlags } = require("discord.js");
+import { BaseInteraction, MessageFlags } from "discord.js";
+
 /**
  * @param {BaseInteraction} interaction
  */
-module.exports = async function (interaction) {
+export default async function (interaction) {
     if (!interaction.isCommand()) return;
     if (interaction.client.commands.has(interaction.commandName)) {
         interaction.client.commands.get(interaction.commandName).execute(interaction);

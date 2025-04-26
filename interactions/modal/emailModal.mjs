@@ -1,10 +1,16 @@
-const { InteractionType, MessageFlags } = require("discord.js");
-const { sendVerificationEmail } = require('../../email/mailer.js');
-const { getConfig } = require('../../config.js');
-const fs = require("node:fs");
-const path = require('path');
-const nodemailer = require('nodemailer');
-const log = require("../../logger.js");
+import { InteractionType, MessageFlags } from "discord.js";
+import { sendVerificationEmail } from '../../email/mailer.mjs';
+import { getConfig } from '../../config.mjs';
+import fs from "node:fs";
+import path from 'path';
+import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
+import log from "../../logger.mjs";
+
+// __dirname の代わりに使用
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const pendingVerifications = new Map();
 /**
  * @param {ModalSubmitInteraction} interaction
@@ -38,7 +44,7 @@ function saveDatabase() {
   }
 }
 
-module.exports = async function (interaction) {
+export default async function (interaction) {
     if (interaction.type === InteractionType.ModalSubmit) {
         if (interaction.customId === 'emailModal') {
             const email = interaction.fields.getTextInputValue('email');

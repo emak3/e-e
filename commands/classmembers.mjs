@@ -1,17 +1,28 @@
-const { ButtonInteraction, EmbedBuilder, MessageFlags } = require("discord.js");
-const log = require("../../logger.js");
-const fs = require("node:fs");
-const path = require('path');
-const { getConfig } = require('../../config.js');
-/**
- * @param {ButtonInteraction} interaction
- */
-module.exports = async function (interaction) {
-    if (interaction.customId === "member") {
+import { SlashCommandBuilder, InteractionContextType, MessageFlags, EmbedBuilder } from 'discord.js';
+import log from "../logger.mjs";
+import fs from "node:fs";
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getConfig } from '../config.mjs';
+
+// __dirname の代わりに使用
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default {
+    command: new SlashCommandBuilder()
+        .setName("classmembers")
+        .setDescription("クラスメンバー一覧を表示")
+        .setContexts(InteractionContextType.Guild),
+
+    /**
+     * @param {import('discord.js').ChatInputCommandInteraction} interaction
+     */
+    async execute(interaction) {
         // 学生データファイルのパス
-        const STUDENT_DATA_PATH = path.join(__dirname, '../../data/student-data.json');
+        const STUDENT_DATA_PATH = path.join(__dirname, '../data/student-data.json');
         // データベースファイルのパス
-        const EMAIL_DB_PATH = path.join(__dirname, '../../data/email-database.json');
+        const EMAIL_DB_PATH = path.join(__dirname, '../data/email-database.json');
 
         // データディレクトリの存在確認、なければ作成
         const dbDir = path.dirname(STUDENT_DATA_PATH);

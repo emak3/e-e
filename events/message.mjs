@@ -1,5 +1,6 @@
-const { Events, Message } = require("discord.js");
-module.exports = {
+import { Events, Message } from "discord.js";
+
+export default {
     name: Events.MessageCreate,
     /**
      * @param {Message} message

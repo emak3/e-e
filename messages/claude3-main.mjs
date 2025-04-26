@@ -1,10 +1,11 @@
-const { Message } = require("discord.js");
-const { hanhanahan, getConfig } = require('../config.js');
-const { handleSpecialChannelMessage } = require('./specialChannels');
-const { Anthropic } = require('@anthropic-ai/sdk');
+import { Message } from "discord.js";
+import { hanhanahan, getConfig } from '../config.mjs';
+import { handleSpecialChannelMessage } from './specialChannels.mjs';
+import { Anthropic } from '@anthropic-ai/sdk';
+import fetch from 'node-fetch';
+import log from "../logger.mjs";
+
 const claude = new Anthropic({ apiKey: getConfig().claudeApiKey });
-const fetch = require('node-fetch');
-const log = require("../logger.js");
 const conversationHistory = {};
 
 async function getBase64FromUrl(url) {
@@ -17,10 +18,11 @@ async function getBase64FromUrl(url) {
         return null;
     }
 }
+
 /**
  * @param {Message} message
  */
-module.exports = async function (message) {
+export default async function (message) {
     // 会話履歴を保持するオブジェクト
     if (message.author.bot) return;
     // メッセージがスレッド内の場合、親チャンネルIDを取得
@@ -127,7 +129,7 @@ module.exports = async function (message) {
             }
         }
     } else {
-        // 特定のチャンネルの場合、specialChannels.jsの処理を呼び出す
+        // 特定のチャンネルの場合、specialChannels.mjsの処理を呼び出す
         await handleSpecialChannelMessage(message);
 
         await hanhanahan(message);

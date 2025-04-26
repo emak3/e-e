@@ -1,8 +1,8 @@
-const log = require("./logger.js");
+import log from "./logger.mjs";
 
 let config = {
   "token": process.env.TOKEN,
-  "clientId":process.env.CLIENT_ID,
+  "clientId": process.env.CLIENT_ID,
   "channelIds": [process.env.CHANNEL_ID_1, process.env.CHANNEL_ID_2],
   "specialChannelIds": [process.env.SPECIAL_CHANNEL_ID_1, process.env.SPECIAL_CHANNEL_ID_2],
   "claudeApiKey": process.env.CLAUDE_API_KEY,
@@ -18,6 +18,7 @@ let config = {
   "inviteLink": process.env.INVITE_LINK
 };
 const channelId = config.specialSystemPlanClientId;
+
 async function oldHanhan(client) {
   if (config.specialSystemPlan == null) {
     const channel = await client.channels.fetch(channelId);
@@ -33,10 +34,11 @@ async function hanhanahan(message) {
     config.specialSystemPlan = message.content;
     log.info(`specialSystemPlanに設定: ${config.specialSystemPlan}`);
     message.react('💡');
-
   }
 }
+
 function getConfig() {
   return config;
 }
-module.exports = { oldHanhan, hanhanahan, getConfig };
+
+export { oldHanhan, hanhanahan, getConfig };

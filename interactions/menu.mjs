@@ -1,8 +1,9 @@
-const { BaseInteraction } = require("discord.js");
+import { BaseInteraction } from "discord.js";
+
 /**
  * @param {BaseInteraction} interaction
  */
-module.exports = async function (interaction) {
+export default async function (interaction) {
     if (!interaction.isStringSelectMenu()
     ) return;
     for (const value of interaction.client.menus) {

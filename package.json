@@ -2,7 +2,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
     "axios": "^1.7.9",
-    "discord.js": "^14.17.3",
+    "discord.js": "^14.19.1",
     "fs": "^0.0.1-security",
     "log4js": "^6.9.1",
     "node-cache": "^5.1.2",
@@ -13,13 +13,14 @@
   },
   "name": "claude3-bot",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "index.mjs",
+  "type": "module",
   "devDependencies": {
     "typescript": "^5.7.3"
   },
   "scripts": {
-    "start": "node --env-file=dev.env index.js",
-    "debug": "nodemon index.js",
+    "start": "node --env-file=dev.env index.mjs",
+    "debug": "nodemon index.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -1,8 +1,8 @@
-const { Client, Partials, GatewayIntentBits } = require("discord.js");
-const { getConfig } = require('./config.js');
-const log = require("./logger.js");
-const { readdirSync } = require("node:fs");
-require("./utils/newUsernameSystem")
+import { Client, Partials, GatewayIntentBits } from "discord.js";
+import { getConfig } from './config.mjs';
+import log from "./logger.mjs";
+import { readdirSync } from "node:fs";
+import "./utils/newUsernameSystem.mjs";
 const client = new Client({ intents: Object.values(GatewayIntentBits), allowedMentions: { parse: ["users", "roles"] }, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 
 client.commands = new Map();
@@ -16,10 +16,12 @@ process.on("uncaughtException", (error) => {
     console.error(error);
 });
 
+// ファイルの動的インポートを使用
 for (const file of readdirSync("./events").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const event = require(`./events/${file}`);
+    const eventModule = await import(`./events/${file}`);
+    const event = eventModule.default;
     if (event.once) {
         client.once(event.name, async (...args) => await event.execute(...args));
     }
@@ -27,41 +29,53 @@ for (const file of readdirSync("./events").filter((file) =>
         client.on(event.name, async (...args) => await event.execute(...args));
     }
 }
+
 for (const file of readdirSync("./commands").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const command = require(`./commands/${file}`);
+    const commandModule = await import(`./commands/${file}`);
+    const command = commandModule.default;
     client.commands.set(command.command.name, command);
 }
+
 for (const file of readdirSync("./interactions").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const interaction = require(`./interactions/${file}`);
+    const interactionModule = await import(`./interactions/${file}`);
+    const interaction = interactionModule.default;
     client.interactions.push(interaction);
 }
+
 for (const file of readdirSync("./interactions/modal").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const modal = require(`./interactions/modal/${file}`);
+    const modalModule = await import(`./interactions/modal/${file}`);
+    const modal = modalModule.default;
     client.modals.push(modal);
 }
+
 for (const file of readdirSync("./interactions/button").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const button = require(`./interactions/button/${file}`);
+    const buttonModule = await import(`./interactions/button/${file}`);
+    const button = buttonModule.default;
     client.buttons.push(button);
 }
+
 for (const file of readdirSync("./interactions/menu").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const menu = require(`./interactions/menu/${file}`);
+    const menuModule = await import(`./interactions/menu/${file}`);
+    const menu = menuModule.default;
     client.menus.push(menu);
 }
+
 for (const file of readdirSync("./messages").filter((file) =>
-    file.endsWith(".js"),
+    file.endsWith(".mjs"),
 )) {
-    const message = require(`./messages/${file}`);
+    const messageModule = await import(`./messages/${file}`);
+    const message = messageModule.default;
     client.messages.push(message);
 }
 
-client.login(getConfig().token).then(log.info(getConfig()));
+client.login(getConfig().token).then(() => log.info(getConfig()));

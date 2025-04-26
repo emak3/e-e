@@ -1,4 +1,4 @@
-const log4js = require('log4js');
+import log4js from 'log4js';
 
 log4js.configure({
 	appenders: {
@@ -13,4 +13,4 @@ log4js.configure({
 });
 
 const log = log4js.getLogger(process.env.PROFILE);
-module.exports = log;
+export default log;

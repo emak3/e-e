@@ -1,8 +1,8 @@
-const { Events, Client, Routes, ActivityType } = require("discord.js");
-const { oldHanhan, getConfig } = require('../config.js');
-const log = require("../logger.js");
+import { Events, Client, Routes, ActivityType } from "discord.js";
+import { oldHanhan, getConfig } from '../config.mjs';
+import log from "../logger.mjs";
 
-module.exports = {
+export default {
     name: Events.ClientReady,
     /**
      * @param {Client} client

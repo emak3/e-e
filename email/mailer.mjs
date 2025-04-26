@@ -1,7 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-const nodemailer = require('nodemailer');
-const { getConfig } = require('../config.js');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
+import { getConfig } from '../config.mjs';
+
+// __dirnameの代替
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -32,4 +37,4 @@ async function sendVerificationEmail(to, code) {
     return transporter.sendMail(mailOptions);
 }
 
-module.exports = { sendVerificationEmail };
+export { sendVerificationEmail };

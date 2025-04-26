@@ -1,10 +1,11 @@
-const { ButtonInteraction, ModalBuilder, TextInputBuilder, ActionRowBuilder, TextInputStyle, MessageFlags } = require("discord.js");
-const log = require("../../logger.js");
-const { getConfig } = require('../../config.js');
+import { ButtonInteraction, ModalBuilder, TextInputBuilder, ActionRowBuilder, TextInputStyle, MessageFlags } from "discord.js";
+import log from "../../logger.mjs";
+import { getConfig } from '../../config.mjs';
+
 /**
  * @param {ButtonInteraction} interaction
  */
-module.exports = async function (interaction) {
+export default async function (interaction) {
     if (interaction.customId === "vcode") {
         const role = interaction.guild.roles.cache.find(roles => roles.id === getConfig().verifyRoleId);
         if (interaction.member.roles.cache.has(role.id)) return await interaction.reply({ content: 'あなたはすでに認証済みです。', flags: MessageFlags.Ephemeral });

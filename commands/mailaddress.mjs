@@ -1,10 +1,15 @@
-const { SlashCommandBuilder, InteractionContextType, MessageFlags } = require('discord.js');
-const log = require("../logger.js");
-const fs = require("node:fs");
-const path = require('path');
-const { getConfig } = require('../config.js');
+import { SlashCommandBuilder, InteractionContextType, MessageFlags } from 'discord.js';
+import log from "../logger.mjs";
+import fs from "node:fs";
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { getConfig } from '../config.mjs';
 
-module.exports = {
+// __dirname の代わりに使用
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export default {
     command: new SlashCommandBuilder()
         .setName("mailaddress")
         .setDescription("メールアドレス確認用")

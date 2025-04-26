@@ -1,5 +1,6 @@
-const { Events, BaseInteraction } = require("discord.js");
-module.exports = {
+import { Events, BaseInteraction } from "discord.js";
+
+export default {
     name: Events.InteractionCreate,
     /**
      * @param {BaseInteraction} interaction

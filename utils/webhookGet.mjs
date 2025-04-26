@@ -1,9 +1,21 @@
-module.exports = async function getWebhookInChannel(channel) {
+/**
+ * チャンネル内のWebhookを取得する関数
+ * @param {Channel} channel - Webhookを取得するチャンネル
+ * @returns {Promise<Webhook|undefined>} 取得したWebhook
+ */
+export default async function getWebhookInChannel(channel) {
     var _a;
     const webhookMaps = new Map();
     const webhook = (_a = webhookMaps.get(channel.id)) !== null && _a !== void 0 ? _a : (await getWebhook(webhookMaps, channel));
     return webhook;
 }
+
+/**
+ * Webhookを取得する内部関数
+ * @param {Map} webhookMaps - Webhookをキャッシュするマップ
+ * @param {Channel} channel - Webhookを取得するチャンネル
+ * @returns {Promise<Webhook|undefined>} 取得したWebhook
+ */
 async function getWebhook(webhookMaps, channel) {
     var _a, _b;
     if (channel.isThread()) {

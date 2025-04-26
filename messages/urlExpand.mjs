@@ -1,11 +1,11 @@
-const { Message, EmbedBuilder, PermissionFlagsBits, ChannelType, AttachmentBuilder, StickerFormatType } = require("discord.js");
-const getWebhookInChannel = require("../utils/webhookGet");
-const log = require("../logger.js");
+import { Message, EmbedBuilder, PermissionFlagsBits, ChannelType, AttachmentBuilder, StickerFormatType } from "discord.js";
+import getWebhookInChannel from "../utils/webhookGet.mjs";
+import log from "../logger.mjs";
 
 /**
  * @param {Message} message
  */
-module.exports = async function (message) {
+export default async function (message) {
     if (message.channel.type === ChannelType.GuildCategory || message.channel.isDMBased() || message.author.bot) return;
     const threadId = message.channel.isThread() ? message.channel.id : null;
     if (!message.guild.members.me.permissions.has(PermissionFlagsBits.ManageWebhooks)) return;
@@ -90,5 +90,4 @@ module.exports = async function (message) {
             return;
         }
     }
-
 }

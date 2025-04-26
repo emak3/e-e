@@ -1,8 +1,9 @@
-const { Anthropic } = require('@anthropic-ai/sdk');
-const { hanhanahan, getConfig } = require('../config.js');
+import { Anthropic } from '@anthropic-ai/sdk';
+import { hanhanahan, getConfig } from '../config.mjs';
+import fetch from 'node-fetch';
+import log from "../logger.mjs";
+
 const claude = new Anthropic({ apiKey: getConfig().claudeApiKey });
-const fetch = require('node-fetch');
-const log = require("../logger.js");
 
 // 会話履歴を保持するオブジェクト
 const specialConversationHistory = {};
@@ -17,7 +18,8 @@ async function getBase64FromUrl(url) {
         return null;
     }
 }
-async function handleSpecialChannelMessage(message) {
+
+export async function handleSpecialChannelMessage(message) {
     if (message.author.bot) return;
     log.info(getConfig().specialSystemPlan)
     // 特定のチャンネルでのみコマンドを処理
@@ -132,5 +134,3 @@ async function handleSpecialChannelMessage(message) {
         }
     }
 }
-
-module.exports = { handleSpecialChannelMessage };
