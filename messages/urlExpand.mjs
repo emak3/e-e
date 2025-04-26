@@ -24,6 +24,42 @@ export default async function (message) {
             const webhook = await getWebhookInChannel(message.channel);
             const msg = await channel.messages.fetch(url[2]);
             const embeds = [...msg.embeds];
+            const components = [...msg.components]
+            // TypeError: this.media.toJSON is not a function
+            //log.debug(embeds)
+            /*
+            [
+                Embed {
+                    data: {
+                       type: 'rich',
+                       description: 'No tracks have been playing for the past 3 minutes, leaving :wave:\n' +
+                            '\n' +
+                           'This can be disabled by using the **[premium](https://www.patreon.com/Jockie)** command `24/7`, for more information check out the `perks` command!',
+                        color: 16711680,
+                        content_scan_version: 0
+                    }
+                }
+            ]
+            */
+            //log.info(components)
+            /*
+            [
+                ContainerComponent {
+                    data: { type: 17, id: 1, accent_color: null, spoiler: false },
+                        components: [
+                            [TextDisplayComponent],
+                            [SeparatorComponent],
+                            [TextDisplayComponent],
+                            [SeparatorComponent],
+                            [MediaGalleryComponent],
+                            [SeparatorComponent],
+                            [TextDisplayComponent],
+                            [TextDisplayComponent],
+                            [ActionRow]
+                        ]
+                }
+            ]
+            */
             if (msg.stickers.size > 0) {
                 embeds.pop();
                 if (msg.stickers.first().format === StickerFormatType.Lottie) {
@@ -45,6 +81,7 @@ export default async function (message) {
                     username: msg.author.username,
                     avatarURL: msg.author.displayAvatarURL(),
                     embeds,
+                    components,
                     allowedMentions: { parse: [] },
                     flags: 4096,
                     files:
@@ -68,6 +105,7 @@ export default async function (message) {
                     username: msg.guild.members.cache.get(msg.author.id).nickname ? `${msg.guild.members.cache.get(msg.author.id).nickname}` : msg.author.globalName ? `${msg.author.globalName}` : msg.author.username,
                     avatarURL: msg.member.displayAvatarURL({ dynamic: true }),
                     embeds,
+                    components,
                     allowedMentions: { parse: [] },
                     flags: 4096,
                     files:
