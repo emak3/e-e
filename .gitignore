@@ -1,5 +1,5 @@
 node_modules/
-data/
+data/*.json
 # dev.env.exampleをコピーして
 # ローカル開発ではdev.envにリネームする想定
 *.env
