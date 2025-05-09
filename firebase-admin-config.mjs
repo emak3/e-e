@@ -9,41 +9,42 @@ import log from './logger.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let app;
-let db;
-let isInitialized = false;
+// サービスアカウントのパス
+const SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || 
+                             path.join(__dirname, './serviceAccountKey.json');
+
+let adminApp = null;
+let adminDb = null;
 
 /**
- * Firebase Admin SDK初期化関数
+ * Firebase Admin SDKを初期化する関数
+ * @returns {FirebaseFirestore.Firestore} - Firestoreインスタンス
  */
-export async function initFirebaseAdmin() {
-  if (isInitialized) return db;
-
+export function getAdminDb() {
+  if (adminDb) {
+    return adminDb;
+  }
+  
   try {
-    // サービスアカウントの読み込み方法（環境変数または.jsonファイル）
+    // サービスアカウントの読み込み
     let serviceAccount;
-    
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      // 環境変数からJSONを解析
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    } else {
-      // ファイルから読み込み
-      const SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || 
-                                   path.join(__dirname, './serviceAccountKey.json');
+    try {
       serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'));
+    } catch (err) {
+      log.error(`サービスアカウントファイルの読み込みエラー: ${err.message}`);
+      log.error(`パス: ${SERVICE_ACCOUNT_PATH}`);
+      throw err;
     }
     
-    app = initializeApp({
-      credential: cert(serviceAccount),
-      // オプション：プロジェクトIDを明示的に指定
-      projectId: serviceAccount.project_id
+    // Firebase Admin SDKの初期化
+    adminApp = initializeApp({
+      credential: cert(serviceAccount)
     });
     
-    db = getFirestore(app);
-    isInitialized = true;
+    adminDb = getFirestore(adminApp);
+    log.info('Firebase Admin SDKを初期化しました');
     
-    log.info('Firebase Admin SDKが正常に初期化されました');
-    return db;
+    return adminDb;
   } catch (error) {
     log.error(`Firebase Admin SDK初期化エラー: ${error.message}`);
     if (error.stack) {
@@ -53,9 +54,34 @@ export async function initFirebaseAdmin() {
   }
 }
 
-// 現在時刻を取得する関数
-function getCurrentTimestamp() {
-  return new Date();
+/**
+ * データをFirestore用に整形する関数
+ * @param {Object} data - 整形するデータ
+ * @returns {Object} - 整形されたデータ
+ */
+export function sanitizeData(data) {
+  // nullとundefinedを処理
+  if (data === null || data === undefined) {
+    return null;
+  }
+  
+  // 配列を処理
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeData(item)).filter(item => item !== undefined);
+  }
+  
+  // オブジェクトを処理
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const result = {};
+    for (const [key, value] of Object.entries(data)) {
+      // undefinedは除外
+      if (value !== undefined) {
+        result[key] = sanitizeData(value);
+      }
+    }
+    return result;
+  }
+  
+  // その他のプリミティブ値はそのまま
+  return data;
 }
-
-export { db, getCurrentTimestamp };

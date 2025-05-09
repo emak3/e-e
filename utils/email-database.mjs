@@ -1,12 +1,4 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs,
-  deleteDoc 
-} from 'firebase/firestore';
-import { db, getCurrentTimestamp } from '../firebase-config.mjs';
+import { getAdminDb, sanitizeData } from '../firebase-admin-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';
 import path from 'path';
@@ -17,35 +9,53 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const EMAIL_DB_PATH = path.join(__dirname, '../data/email-database.json');
 
-// Firestoreコレクション参照
-const emailsCollection = collection(db, 'email_database');
-
-// データをFirestore用に整形する関数
-function sanitizeData(data) {
-  // undefined, 関数などを除去
-  return JSON.parse(JSON.stringify(data));
-}
+// コレクション名
+const COLLECTION_NAME = 'email_database';
 
 /**
  * メールアドレスを保存する関数
+ * @param {string} userId - ユーザーID
+ * @param {string} email - メールアドレス
+ * @returns {Promise<boolean>} - 成功したかどうか
  */
 export async function saveEmail(userId, email) {
+  if (!userId) {
+    log.error("保存エラー: ユーザーIDが指定されていません");
+    return false;
+  }
+
   try {
-    const emailRef = doc(emailsCollection, userId);
+    const db = getAdminDb();
     
+    // 保存するデータを作成
     const data = sanitizeData({
-      email,
-      updatedAt: getCurrentTimestamp()
+      email: email || null,
+      userId, // 冗長だがクエリで使うために保存
+      updatedAt: new Date(),
+      createdAt: new Date() // 新規作成時のみ
     });
     
-    log.debug(`保存するデータ: ${JSON.stringify(data)}`);
+    // デバッグログ
+    log.debug(`保存するデータ (${userId}): ${JSON.stringify(data)}`);
     
-    await setDoc(emailRef, data, { merge: true });
+    // ドキュメント参照
+    const docRef = db.collection(COLLECTION_NAME).doc(userId);
+    
+    // 既存ドキュメントの確認
+    const doc = await docRef.get();
+    if (doc.exists) {
+      // 既存のデータがある場合は作成日を保持
+      delete data.createdAt;
+      await docRef.update(data);
+    } else {
+      // 新規作成
+      await docRef.set(data);
+    }
     
     log.info(`ユーザー ${userId} のメールアドレスを保存しました`);
     return true;
   } catch (error) {
-    log.error(`メールアドレス保存エラー: ${error.message}`);
+    log.error(`メールアドレス保存エラー (${userId}): ${error.message}`);
     if (error.stack) {
       log.error(`スタックトレース: ${error.stack}`);
     }
@@ -55,32 +65,45 @@ export async function saveEmail(userId, email) {
 
 /**
  * メールアドレスを取得する関数
+ * @param {string} userId - ユーザーID
+ * @returns {Promise<string|null>} - メールアドレスまたはnull
  */
 export async function getEmail(userId) {
+  if (!userId) {
+    log.error("取得エラー: ユーザーIDが指定されていません");
+    return null;
+  }
+
   try {
-    const emailRef = doc(emailsCollection, userId);
-    const emailSnap = await getDoc(emailRef);
+    const db = getAdminDb();
+    const docRef = db.collection(COLLECTION_NAME).doc(userId);
+    const doc = await docRef.get();
     
-    if (emailSnap.exists()) {
-      return emailSnap.data().email;
+    if (doc.exists) {
+      return doc.data().email;
     }
     return null;
   } catch (error) {
-    log.error(`メールアドレス取得エラー: ${error.message}`);
+    log.error(`メールアドレス取得エラー (${userId}): ${error.message}`);
     return null;
   }
 }
 
 /**
  * 全メールアドレスをオブジェクトとして取得
+ * @returns {Promise<Object>} - {userId: email}形式のオブジェクト
  */
 export async function getAllEmails() {
   try {
-    const snapshot = await getDocs(emailsCollection);
+    const db = getAdminDb();
+    const snapshot = await db.collection(COLLECTION_NAME).get();
     
     const emailsObj = {};
     snapshot.forEach(doc => {
-      emailsObj[doc.id] = doc.data().email;
+      const data = doc.data();
+      if (data.email) {
+        emailsObj[doc.id] = data.email;
+      }
     });
     
     return emailsObj;
@@ -92,22 +115,30 @@ export async function getAllEmails() {
 
 /**
  * メールアドレスを削除する関数
+ * @param {string} userId - ユーザーID
+ * @returns {Promise<boolean>} - 成功したかどうか
  */
 export async function deleteEmail(userId) {
+  if (!userId) {
+    log.error("削除エラー: ユーザーIDが指定されていません");
+    return false;
+  }
+
   try {
-    const emailRef = doc(emailsCollection, userId);
-    await deleteDoc(emailRef);
+    const db = getAdminDb();
+    await db.collection(COLLECTION_NAME).doc(userId).delete();
     
     log.info(`ユーザー ${userId} のメールアドレスを削除しました`);
     return true;
   } catch (error) {
-    log.error(`メールアドレス削除エラー: ${error.message}`);
+    log.error(`メールアドレス削除エラー (${userId}): ${error.message}`);
     return false;
   }
 }
 
 /**
  * JSONファイルからFirestoreへデータを移行する関数
+ * @returns {Promise<Object>} - 移行結果
  */
 export async function migrateEmailsToDatabase() {
   try {
@@ -127,24 +158,48 @@ export async function migrateEmailsToDatabase() {
     let migratedCount = 0;
     let skippedCount = 0;
     
+    // Firestoreに挿入
+    const db = getAdminDb();
+    const batch = db.batch();
+    let batchCount = 0;
+    const MAX_BATCH_SIZE = 500; // Firestoreの最大バッチサイズ
+    
     for (const [userId, email] of Object.entries(emailDatabase)) {
       try {
-        const emailRef = doc(emailsCollection, userId);
+        if (!userId || !email) {
+          skippedCount++;
+          continue;
+        }
+        
+        const docRef = db.collection(COLLECTION_NAME).doc(userId);
         
         const docData = sanitizeData({
           email,
-          createdAt: getCurrentTimestamp(),
-          updatedAt: getCurrentTimestamp()
+          userId,
+          createdAt: new Date(),
+          updatedAt: new Date()
         });
         
-        await setDoc(emailRef, docData);
+        batch.set(docRef, docData);
+        batchCount++;
         
-        migratedCount++;
-        log.debug(`ユーザー ${userId} のメールアドレスを移行しました`);
+        // バッチサイズが上限に達したらコミット
+        if (batchCount >= MAX_BATCH_SIZE) {
+          await batch.commit();
+          migratedCount += batchCount;
+          batchCount = 0;
+          log.info(`${migratedCount}件のメールアドレスを移行しました`);
+        }
       } catch (error) {
         log.error(`ユーザー ${userId} のメールアドレス移行エラー: ${error.message}`);
         skippedCount++;
       }
+    }
+    
+    // 残りのバッチをコミット
+    if (batchCount > 0) {
+      await batch.commit();
+      migratedCount += batchCount;
     }
     
     log.info(`メールデータベースの移行が完了しました。移行: ${migratedCount}, スキップ: ${skippedCount}`);

@@ -1,9 +1,10 @@
 import { InteractionType, MessageFlags } from "discord.js";
 import { sendVerificationEmail } from '../../email/mailer.mjs';
 import { getConfig } from '../../config.mjs';
-import { saveEmail, getEmail } from '../../utils/email-database.mjs'; // Firestoreを使用
+import { saveEmail } from '../../utils/email-database.mjs'; // Admin SDK版を使用
 import log from "../../logger.mjs";
 
+// 認証コード待ちユーザーをメモリに保存
 const pendingVerifications = new Map();
 
 export default async function (interaction) {
@@ -28,7 +29,7 @@ export default async function (interaction) {
                 await sendVerificationEmail(email, code);
                 await interaction.reply({ content: `認証コードを **${email}** に送信しました！\n迷惑メールフォルダーに入っている場合があります。`, flags: MessageFlags.Ephemeral });
             } catch (err) {
-                console.error(err);
+                log.error(`メール送信エラー: ${err.message}`);
                 await interaction.reply({ content: 'メール送信に失敗しました。', flags: MessageFlags.Ephemeral });
             }
         }
@@ -49,17 +50,33 @@ export default async function (interaction) {
                 }
 
                 try {
+                    // メンバーにロールを付与
                     const member = await interaction.guild.members.fetch(userId);
                     await member.roles.add(role);
                     
-                    // Firestoreにメールアドレスを保存
-                    await saveEmail(userId, data.email);
+                    // Admin SDKを使用してFirestoreにメールアドレスを保存
+                    try {
+                        await saveEmail(userId, data.email);
+                        log.info(`ユーザー ${interaction.user.tag} のメールアドレスを保存しました: ${data.email}`);
+                    } catch (dbError) {
+                        // データベースエラーはログに記録するが、ユーザーには成功を返す
+                        log.error(`データベース保存エラー: ${dbError.message}`);
+                        log.error(`対象: ユーザーID=${userId}, メール=${data.email}`);
+                        if (dbError.stack) {
+                            log.error(`スタックトレース: ${dbError.stack}`);
+                        }
+                    }
                     
+                    // 認証コード情報を削除
                     pendingVerifications.delete(userId);
+                    
                     log.info(`ユーザー ${interaction.user.tag} の認証が成功しました。メールアドレス: ${data.email}`);
                     await interaction.reply({ content: '認証成功！ロールを付与しました。', flags: MessageFlags.Ephemeral });
                 } catch (error) {
-                    log.error(`ロール付与エラー: ${error}`);
+                    log.error(`ロール付与エラー: ${error.message}`);
+                    if (error.stack) {
+                        log.error(`スタックトレース: ${error.stack}`);
+                    }
                     await interaction.reply({ content: 'ロールの付与中にエラーが発生しました。管理者に連絡してください。', flags: MessageFlags.Ephemeral });
                 }
             } else {
