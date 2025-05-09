@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase/firestore';
 import log from './logger.mjs';
 
-// Firebase設定（Firebase Consoleのプロジェクト設定 > 全般 > アプリに追加 > Webからコピー）
+// Firebase設定
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -13,9 +13,20 @@ const firebaseConfig = {
 };
 
 // Firebaseの初期化
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+let app;
+let db;
 
-log.info('Firebase Firestoreに接続しました');
+try {
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  log.info('Firebase Firestoreに接続しました');
+} catch (error) {
+  log.error('Firebase接続エラー:', error);
+}
 
-export { db };
+// 現在時刻を取得する関数（代替手段）
+function getCurrentTimestamp() {
+  return new Date().toISOString();
+}
+
+export { db, getCurrentTimestamp };
