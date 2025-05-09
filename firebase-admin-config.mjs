@@ -9,26 +9,53 @@ import log from './logger.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// サービスアカウントキーファイルのパス（JSONファイル）
-// Firebaseコンソール > プロジェクト設定 > サービスアカウント > Firebase Admin SDK > 新しい秘密鍵の生成
-const SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || path.join(__dirname, './serviceAccountKey.json');
+let app;
+let db;
+let isInitialized = false;
 
-// Firebase Adminの初期化
-let adminApp;
-let adminDb;
+/**
+ * Firebase Admin SDK初期化関数
+ */
+export async function initFirebaseAdmin() {
+  if (isInitialized) return db;
 
-try {
-    const serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'));
+  try {
+    // サービスアカウントの読み込み方法（環境変数または.jsonファイル）
+    let serviceAccount;
     
-    adminApp = initializeApp({
-        credential: cert(serviceAccount)
-    }, 'admin');
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      // 環境変数からJSONを解析
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+      // ファイルから読み込み
+      const SERVICE_ACCOUNT_PATH = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || 
+                                   path.join(__dirname, './serviceAccountKey.json');
+      serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'));
+    }
     
-    adminDb = getFirestore(adminApp);
-    log.info('Firebase Admin SDKが初期化されました');
-} catch (error) {
-    log.error('Firebase Admin SDK初期化エラー:', error);
+    app = initializeApp({
+      credential: cert(serviceAccount),
+      // オプション：プロジェクトIDを明示的に指定
+      projectId: serviceAccount.project_id
+    });
+    
+    db = getFirestore(app);
+    isInitialized = true;
+    
+    log.info('Firebase Admin SDKが正常に初期化されました');
+    return db;
+  } catch (error) {
+    log.error(`Firebase Admin SDK初期化エラー: ${error.message}`);
+    if (error.stack) {
+      log.error(`スタックトレース: ${error.stack}`);
+    }
     throw error;
+  }
 }
 
-export { adminDb };
+// 現在時刻を取得する関数
+function getCurrentTimestamp() {
+  return new Date();
+}
+
+export { db, getCurrentTimestamp };

@@ -1,50 +1,26 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs,
-  deleteDoc 
-} from 'firebase/firestore';
-import { db, getCurrentTimestamp } from '../firebase-config.mjs';
+import crypto from 'crypto';
+import { initFirebaseAdmin, getCurrentTimestamp } from '../firebase-admin-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 
 // __dirnameの代替
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const RSS_STATUS_PATH = path.join(__dirname, '../data/rss-status.json');
 
-// Firestoreコレクション参照
-const rssCollection = collection(db, 'rss_status');
+// コレクション名
+const COLLECTION_NAME = 'rss_status';
 
 // URLをハッシュ化してドキュメントIDにする関数
 function getSafeDocumentId(url) {
   return crypto.createHash('md5').update(url).digest('hex');
 }
 
-// データをFirestore用に整形する関数
+// データを整形する関数
 function sanitizeData(data) {
   return JSON.parse(JSON.stringify(data));
-}
-
-// 日付文字列を標準化する関数
-function formatDate(dateStr) {
-  if (!dateStr) return null;
-  
-  try {
-    const date = new Date(dateStr);
-    // 有効な日付かチェック
-    if (isNaN(date.getTime())) {
-      return null;
-    }
-    return date.toISOString();
-  } catch (e) {
-    return null;
-  }
 }
 
 /**
@@ -52,13 +28,25 @@ function formatDate(dateStr) {
  */
 export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, lastTitle) {
   try {
-    // URLをハッシュ化してドキュメントIDにする
+    const db = await initFirebaseAdmin();
+    
+    // ドキュメントIDの生成
     const docId = getSafeDocumentId(feedUrl);
-    const rssRef = doc(rssCollection, docId);
     
-    // 日付の標準化
-    const formattedDate = formatDate(lastPublishDate);
+    // 日付の処理
+    let formattedDate = null;
+    if (lastPublishDate) {
+      try {
+        formattedDate = new Date(lastPublishDate);
+        if (isNaN(formattedDate.getTime())) {
+          formattedDate = null;
+        }
+      } catch (e) {
+        formattedDate = null;
+      }
+    }
     
+    // データの整形
     const data = sanitizeData({
       feedUrl,
       lastItemId: lastItemId || null,
@@ -69,7 +57,7 @@ export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, last
     
     log.debug(`保存するRSSデータ: ${JSON.stringify(data)}`);
     
-    await setDoc(rssRef, data, { merge: true });
+    await db.collection(COLLECTION_NAME).doc(docId).set(data, { merge: true });
     
     log.info(`RSS ${feedUrl} のステータスを更新しました`);
     return true;
@@ -87,18 +75,20 @@ export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, last
  */
 export async function getRssStatus(feedUrl) {
   try {
-    const docId = getSafeDocumentId(feedUrl);
-    const rssRef = doc(rssCollection, docId);
-    const rssSnap = await getDoc(rssRef);
+    const db = await initFirebaseAdmin();
     
-    if (rssSnap.exists()) {
-      const data = rssSnap.data();
+    const docId = getSafeDocumentId(feedUrl);
+    const doc = await db.collection(COLLECTION_NAME).doc(docId).get();
+    
+    if (doc.exists) {
+      const data = doc.data();
       return {
         lastItemId: data.lastItemId,
         lastPublishDate: data.lastPublishDate,
         lastTitle: data.lastTitle
       };
     }
+    
     return null;
   } catch (error) {
     log.error(`RSSステータス取得エラー: ${error.message}`);
@@ -111,12 +101,14 @@ export async function getRssStatus(feedUrl) {
  */
 export async function getAllRssStatus() {
   try {
-    const snapshot = await getDocs(rssCollection);
+    const db = await initFirebaseAdmin();
+    
+    const snapshot = await db.collection(COLLECTION_NAME).get();
     
     const statusObj = {};
     snapshot.forEach(doc => {
       const data = doc.data();
-      if (data.feedUrl) {  // feedUrlがある場合のみ
+      if (data.feedUrl) {
         statusObj[data.feedUrl] = {
           lastItemId: data.lastItemId,
           lastPublishDate: data.lastPublishDate,
