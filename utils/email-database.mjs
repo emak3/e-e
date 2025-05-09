@@ -9,7 +9,7 @@ import {
     query,
     where
 } from 'firebase-admin/firestore';
-import { db } from '../firebase-admin-config.mjs';
+import { admin } from '../firebase-admin-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';
 import path from 'path';
