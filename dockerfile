@@ -1,5 +1,7 @@
 FROM node:20
 
+ENV TZ=Asia/Tokyo
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
