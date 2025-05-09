@@ -124,6 +124,51 @@ async function getImageFromItem(item) {
     return null;
 }
 
+// 安全に日付を比較する関数
+function safeCompareDate(date1, date2) {
+    try {
+        // nullやundefinedの場合
+        if (!date1 || !date2) return false;
+        
+        // 日付オブジェクトに変換
+        const d1 = typeof date1 === 'string' ? new Date(date1) : date1;
+        const d2 = typeof date2 === 'string' ? new Date(date2) : date2;
+        
+        // 有効な日付かどうかチェック
+        if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+            return false;
+        }
+        
+        // ミリ秒単位で比較
+        return d1.getTime() > d2.getTime();
+    } catch (e) {
+        log.error(`日付比較エラー: ${e.message}`);
+        return false;
+    }
+}
+// 安全に日付を比較する関数
+function safeCompareDate(date1, date2) {
+    try {
+        // nullやundefinedの場合
+        if (!date1 || !date2) return false;
+        
+        // 日付オブジェクトに変換
+        const d1 = typeof date1 === 'string' ? new Date(date1) : date1;
+        const d2 = typeof date2 === 'string' ? new Date(date2) : date2;
+        
+        // 有効な日付かどうかチェック
+        if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+            return false;
+        }
+        
+        // ミリ秒単位で比較
+        return d1.getTime() > d2.getTime();
+    } catch (e) {
+        log.error(`日付比較エラー: ${e.message}`);
+        return false;
+    }
+}
+
 // RSSフィードを取得して処理する関数
 async function processRssFeeds(client) {
     log.info('RSSフィードの処理を開始します');
@@ -157,7 +202,11 @@ async function processRssFeeds(client) {
                     lastTitle: null
                 };
                 
-                log.debug(`フィード ${feed.url} の最終処理情報: ${JSON.stringify(lastProcessed)}`);
+                // 安全なログ出力（toISOString()を使わない）
+                log.debug(`フィード ${feed.url} の最終処理情報:` + 
+                         ` lastItemId=${lastProcessed.lastItemId || 'なし'},` +
+                         ` lastPublishDate=${safeFormatDate(lastProcessed.lastPublishDate)},` +
+                         ` lastTitle=${lastProcessed.lastTitle || 'なし'}`);
 
                 // 新しいアイテムをフィルタリング（ロジックを修正）
                 const newItems = [];
@@ -168,24 +217,24 @@ async function processRssFeeds(client) {
                     // まず、IDによる比較
                     if (item.guid && lastProcessed.lastItemId) {
                         isNew = item.guid !== lastProcessed.lastItemId;
-                        log.debug(`アイテム ${item.title} - GUIDによる比較: ${isNew} (${item.guid} vs ${lastProcessed.lastItemId})`);
+                        log.debug(`アイテム "${item.title}" - GUIDによる比較: ${isNew ? '新規' : '既存'}`);
                     } 
                     // 次に日付による比較
                     else if (item.pubDate && lastProcessed.lastPublishDate) {
-                        const itemDate = new Date(item.pubDate).getTime();
-                        const lastDate = new Date(lastProcessed.lastPublishDate).getTime();
-                        isNew = itemDate > lastDate;
-                        log.debug(`アイテム ${item.title} - 日付による比較: ${isNew} (${new Date(item.pubDate).toISOString()} vs ${new Date(lastProcessed.lastPublishDate).toISOString()})`);
+                        // 安全な日付比較関数を使用
+                        isNew = safeCompareDate(item.pubDate, lastProcessed.lastPublishDate);
+                        log.debug(`アイテム "${item.title}" - 日付による比較: ${isNew ? '新規' : '既存'} ` +
+                                 `(${safeFormatDate(item.pubDate)} vs ${safeFormatDate(lastProcessed.lastPublishDate)})`);
                     } 
                     // 最後にタイトルによる比較
                     else if (item.title && lastProcessed.lastTitle) {
                         isNew = item.title !== lastProcessed.lastTitle;
-                        log.debug(`アイテム ${item.title} - タイトルによる比較: ${isNew}`);
+                        log.debug(`アイテム "${item.title}" - タイトルによる比較: ${isNew ? '新規' : '既存'}`);
                     } 
                     // どれも比較できない場合は新規とみなす
                     else {
                         isNew = true;
-                        log.debug(`アイテム ${item.title} - 比較不能のため新規とみなす`);
+                        log.debug(`アイテム "${item.title}" - 比較不能のため新規とみなす`);
                     }
 
                     if (isNew) {
@@ -195,9 +244,20 @@ async function processRssFeeds(client) {
 
                 // 新しいアイテムを日付順（古い順）にソート
                 newItems.sort((a, b) => {
-                    const dateA = a.pubDate ? new Date(a.pubDate).getTime() : 0;
-                    const dateB = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-                    return dateA - dateB;
+                    try {
+                        const dateA = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+                        const dateB = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+                        
+                        // 無効な日付をチェック
+                        if (isNaN(dateA) || isNaN(dateB)) {
+                            return 0; // 日付が無効な場合は並び順を変更しない
+                        }
+                        
+                        return dateA - dateB;
+                    } catch (e) {
+                        log.error(`日付ソートエラー: ${e.message}`);
+                        return 0;
+                    }
                 });
 
                 log.info(`フィード ${feed.url} の新しいアイテム数: ${newItems.length}`);
@@ -244,7 +304,11 @@ async function processRssFeeds(client) {
                     const lastItem = newItems[newItems.length - 1];
                     
                     // 保存前に内容を確認
-                    log.debug(`保存するRSSステータス: URL=${feed.url}, lastItemId=${lastItem.guid || null}, lastPublishDate=${lastItem.pubDate || null}, lastTitle=${lastItem.title || null}`);
+                    log.debug(`保存するRSSステータス: ` +
+                             `URL=${feed.url}, ` +
+                             `lastItemId=${lastItem.guid || 'null'}, ` +
+                             `lastPublishDate=${safeFormatDate(lastItem.pubDate)}, ` + 
+                             `lastTitle=${lastItem.title || 'null'}`);
                     
                     await updateRssStatus(
                         feed.url,

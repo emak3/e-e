@@ -26,13 +26,31 @@ function parseDate(dateStr) {
   if (!dateStr) return null;
   
   try {
-    const date = new Date(dateStr);
-    // 有効な日付かチェック
-    if (isNaN(date.getTime())) {
-      return null;
+    // 日付文字列の場合
+    if (typeof dateStr === 'string') {
+      const date = new Date(dateStr);
+      // 有効な日付かチェック
+      if (isNaN(date.getTime())) {
+        log.warn(`無効な日付文字列: ${dateStr}`);
+        return null;
+      }
+      return date;
     }
-    return date;
+    
+    // すでにDateオブジェクトの場合
+    if (dateStr instanceof Date) {
+      if (isNaN(dateStr.getTime())) {
+        log.warn(`無効なDateオブジェクト`);
+        return null;
+      }
+      return dateStr;
+    }
+    
+    // それ以外の場合
+    log.warn(`サポートされていない日付形式: ${typeof dateStr}`);
+    return null;
   } catch (e) {
+    log.error(`日付処理エラー: ${e.message}`);
     return null;
   }
 }
@@ -41,7 +59,7 @@ function parseDate(dateStr) {
  * RSSステータスを更新する関数
  * @param {string} feedUrl - フィードURL
  * @param {string} lastItemId - 最後に処理したアイテムID
- * @param {string} lastPublishDate - 最後に処理したアイテムの公開日
+ * @param {string|Date} lastPublishDate - 最後に処理したアイテムの公開日
  * @param {string} lastTitle - 最後に処理したアイテムのタイトル
  * @returns {Promise<boolean>} - 成功したかどうか
  */
@@ -70,7 +88,11 @@ export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, last
     });
     
     // デバッグログでデータを出力
-    log.debug(`保存するRSSデータ: ${JSON.stringify(data)}`);
+    const debugData = {
+      ...data,
+      lastPublishDate: parsedDate ? parsedDate.toLocaleString('ja-JP') : null
+    };
+    log.debug(`保存するRSSデータ: ${JSON.stringify(debugData)}`);
     
     // ドキュメント参照
     const docRef = db.collection(COLLECTION_NAME).doc(docId);
@@ -119,10 +141,36 @@ export async function getRssStatus(feedUrl) {
     if (doc.exists) {
       const data = doc.data();
       
+      // 日付処理を追加
+      let lastPublishDate = null;
+      if (data.lastPublishDate) {
+        if (data.lastPublishDate instanceof Date) {
+          if (!isNaN(data.lastPublishDate.getTime())) {
+            lastPublishDate = data.lastPublishDate;
+          }
+        } else if (typeof data.lastPublishDate === 'object' && data.lastPublishDate._seconds !== undefined) {
+          // Firestore Timestampの場合
+          try {
+            lastPublishDate = new Date(data.lastPublishDate._seconds * 1000);
+          } catch (e) {
+            log.warn(`Timestampの変換エラー: ${e.message}`);
+          }
+        } else if (typeof data.lastPublishDate === 'string') {
+          try {
+            const date = new Date(data.lastPublishDate);
+            if (!isNaN(date.getTime())) {
+              lastPublishDate = date;
+            }
+          } catch (e) {
+            log.warn(`日付文字列の変換エラー: ${e.message}`);
+          }
+        }
+      }
+      
       // 返却データを安全な形式に整形
       return {
         lastItemId: data.lastItemId || null,
-        lastPublishDate: data.lastPublishDate,
+        lastPublishDate: lastPublishDate,
         lastTitle: data.lastTitle || null
       };
     }
