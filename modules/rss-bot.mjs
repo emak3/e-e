@@ -23,10 +23,10 @@ import getWebhookInChannel from "../utils/webhookGet.mjs";
 import { getFavicon } from './favicon-utils.mjs';
 import { JSDOM } from 'jsdom';
 // Firestoreとの連携用に追加
-import { 
-    getRssStatus, 
-    updateRssStatus, 
-    getAllRssStatus 
+import {
+    getRssStatus,
+    updateRssStatus,
+    getAllRssStatus
 } from '../utils/rss-database.mjs';
 
 // RSSパーサーの設定
@@ -129,38 +129,16 @@ function safeCompareDate(date1, date2) {
     try {
         // nullやundefinedの場合
         if (!date1 || !date2) return false;
-        
+
         // 日付オブジェクトに変換
         const d1 = typeof date1 === 'string' ? new Date(date1) : date1;
         const d2 = typeof date2 === 'string' ? new Date(date2) : date2;
-        
+
         // 有効な日付かどうかチェック
         if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
             return false;
         }
-        
-        // ミリ秒単位で比較
-        return d1.getTime() > d2.getTime();
-    } catch (e) {
-        log.error(`日付比較エラー: ${e.message}`);
-        return false;
-    }
-}
-// 安全に日付を比較する関数
-function safeCompareDate(date1, date2) {
-    try {
-        // nullやundefinedの場合
-        if (!date1 || !date2) return false;
-        
-        // 日付オブジェクトに変換
-        const d1 = typeof date1 === 'string' ? new Date(date1) : date1;
-        const d2 = typeof date2 === 'string' ? new Date(date2) : date2;
-        
-        // 有効な日付かどうかチェック
-        if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
-            return false;
-        }
-        
+
         // ミリ秒単位で比較
         return d1.getTime() > d2.getTime();
     } catch (e) {
@@ -177,7 +155,7 @@ async function processRssFeeds(client) {
         // 現在のRSSステータスを読み込み (Firestoreから)
         const rssStatus = await getAllRssStatus();
         log.debug(`RSSステータス読み込み完了: ${Object.keys(rssStatus).length}件のフィード情報`);
-        
+
         const config = getConfig();
         const rssConfig = config.rssConfig || [];
 
@@ -201,16 +179,16 @@ async function processRssFeeds(client) {
                     lastPublishDate: null,
                     lastTitle: null
                 };
-                
+
                 // 安全なログ出力（toISOString()を使わない）
-                log.debug(`フィード ${feed.url} の最終処理情報:` + 
-                         ` lastItemId=${lastProcessed.lastItemId || 'なし'},` +
-                         ` lastPublishDate=${safeFormatDate(lastProcessed.lastPublishDate)},` +
-                         ` lastTitle=${lastProcessed.lastTitle || 'なし'}`);
+                log.debug(`フィード ${feed.url} の最終処理情報:` +
+                    ` lastItemId=${lastProcessed.lastItemId || 'なし'},` +
+                    ` lastPublishDate=${safeFormatDate(lastProcessed.lastPublishDate)},` +
+                    ` lastTitle=${lastProcessed.lastTitle || 'なし'}`);
 
                 // 新しいアイテムをフィルタリング（ロジックを修正）
                 const newItems = [];
-                
+
                 for (const item of feedData.items) {
                     let isNew = false;
 
@@ -218,19 +196,19 @@ async function processRssFeeds(client) {
                     if (item.guid && lastProcessed.lastItemId) {
                         isNew = item.guid !== lastProcessed.lastItemId;
                         log.debug(`アイテム "${item.title}" - GUIDによる比較: ${isNew ? '新規' : '既存'}`);
-                    } 
+                    }
                     // 次に日付による比較
                     else if (item.pubDate && lastProcessed.lastPublishDate) {
                         // 安全な日付比較関数を使用
                         isNew = safeCompareDate(item.pubDate, lastProcessed.lastPublishDate);
                         log.debug(`アイテム "${item.title}" - 日付による比較: ${isNew ? '新規' : '既存'} ` +
-                                 `(${safeFormatDate(item.pubDate)} vs ${safeFormatDate(lastProcessed.lastPublishDate)})`);
-                    } 
+                            `(${safeFormatDate(item.pubDate)} vs ${safeFormatDate(lastProcessed.lastPublishDate)})`);
+                    }
                     // 最後にタイトルによる比較
                     else if (item.title && lastProcessed.lastTitle) {
                         isNew = item.title !== lastProcessed.lastTitle;
                         log.debug(`アイテム "${item.title}" - タイトルによる比較: ${isNew ? '新規' : '既存'}`);
-                    } 
+                    }
                     // どれも比較できない場合は新規とみなす
                     else {
                         isNew = true;
@@ -247,12 +225,12 @@ async function processRssFeeds(client) {
                     try {
                         const dateA = a.pubDate ? new Date(a.pubDate).getTime() : 0;
                         const dateB = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-                        
+
                         // 無効な日付をチェック
                         if (isNaN(dateA) || isNaN(dateB)) {
                             return 0; // 日付が無効な場合は並び順を変更しない
                         }
-                        
+
                         return dateA - dateB;
                     } catch (e) {
                         log.error(`日付ソートエラー: ${e.message}`);
@@ -278,7 +256,7 @@ async function processRssFeeds(client) {
                 // 新しいアイテムをチャンネルに送信
                 for (const item of newItems) {
                     log.debug(`新しいアイテムを送信: ${item.title}`);
-                    
+
                     // 設定されたすべてのチャンネルに送信
                     for (const channelId of feed.channels) {
                         try {
@@ -302,14 +280,14 @@ async function processRssFeeds(client) {
                 // 最後に処理したアイテムの情報を更新
                 if (newItems.length > 0) {
                     const lastItem = newItems[newItems.length - 1];
-                    
+
                     // 保存前に内容を確認
                     log.debug(`保存するRSSステータス: ` +
-                             `URL=${feed.url}, ` +
-                             `lastItemId=${lastItem.guid || 'null'}, ` +
-                             `lastPublishDate=${safeFormatDate(lastItem.pubDate)}, ` + 
-                             `lastTitle=${lastItem.title || 'null'}`);
-                    
+                        `URL=${feed.url}, ` +
+                        `lastItemId=${lastItem.guid || 'null'}, ` +
+                        `lastPublishDate=${safeFormatDate(lastItem.pubDate)}, ` +
+                        `lastTitle=${lastItem.title || 'null'}`);
+
                     await updateRssStatus(
                         feed.url,
                         lastItem.guid || null,
@@ -379,7 +357,7 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
             const description = item.contentSnippet.length > 500
                 ? item.contentSnippet.substring(0, 500).trim() + '...'
                 : item.contentSnippet.trim();
-        
+
             const contentText = new TextDisplayBuilder().setContent(description);
             container.addTextDisplayComponents(contentText);
         }
@@ -470,11 +448,11 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
                 .setURL(item.link)
                 .setStyle(ButtonStyle.Link)
                 .setEmoji('🔗');
-    
-                container.addActionRowComponents(row => {
-                    row.addComponents(readArticleButton);
-                    return row;
-                });
+
+            container.addActionRowComponents(row => {
+                row.addComponents(readArticleButton);
+                return row;
+            });
         }
 
         // Webhookの送信オプション
