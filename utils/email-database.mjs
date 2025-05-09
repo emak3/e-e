@@ -1,8 +1,16 @@
-import { getAdminDb, sanitizeData } from '../firebase-admin-config.mjs';
+import { initFirebaseAdmin, sanitizeData } from '../firebase-admin-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// エイリアスを作成
+const getAdminDb = initFirebaseAdmin;
+
+// 現在の時刻を取得する関数
+function getCurrentTimestamp() {
+  return new Date();
+}
 
 // __dirnameの代替
 const __filename = fileURLToPath(import.meta.url);
@@ -31,8 +39,7 @@ export async function saveEmail(userId, email) {
     const data = sanitizeData({
       email: email || null,
       userId, // 冗長だがクエリで使うために保存
-      updatedAt: new Date(),
-      createdAt: new Date() // 新規作成時のみ
+      updatedAt: getCurrentTimestamp()
     });
     
     // デバッグログ
@@ -48,6 +55,8 @@ export async function saveEmail(userId, email) {
       delete data.createdAt;
       await docRef.update(data);
     } else {
+      // 作成日を設定
+      data.createdAt = getCurrentTimestamp();
       // 新規作成
       await docRef.set(data);
     }
@@ -176,8 +185,8 @@ export async function migrateEmailsToDatabase() {
         const docData = sanitizeData({
           email,
           userId,
-          createdAt: new Date(),
-          updatedAt: new Date()
+          createdAt: getCurrentTimestamp(),
+          updatedAt: getCurrentTimestamp()
         });
         
         batch.set(docRef, docData);
