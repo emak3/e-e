@@ -1,48 +1,10 @@
 import { InteractionType, MessageFlags } from "discord.js";
 import { sendVerificationEmail } from '../../email/mailer.mjs';
 import { getConfig } from '../../config.mjs';
-import fs from "node:fs";
-import path from 'path';
-import { fileURLToPath } from 'url';
-import nodemailer from 'nodemailer';
+import { saveEmail, getEmail } from '../../utils/email-database.mjs'; // Firestoreを使用
 import log from "../../logger.mjs";
 
-// __dirname の代わりに使用
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const pendingVerifications = new Map();
-/**
- * @param {ModalSubmitInteraction} interaction
- */
-
-const EMAIL_DB_PATH = path.join(__dirname, '../../data/email-database.json');
-
-// メールアドレスデータベースの読み込み
-let emailDatabase = {};
-try {
-  if (fs.existsSync(EMAIL_DB_PATH)) {
-    const data = fs.readFileSync(EMAIL_DB_PATH, 'utf-8');
-    emailDatabase = JSON.parse(data);
-    log.info('データベースを読み込みました');
-  } else {
-    // ファイルが存在しない場合は新規作成
-    fs.writeFileSync(EMAIL_DB_PATH, JSON.stringify({}, null, 2));
-    log.info('新しいデータベースファイルを作成しました');
-  }
-} catch (error) {
-  log.error('データベースの読み込みエラー:', error);
-}
-
-// データベースを保存する関数
-function saveDatabase() {
-  try {
-    fs.writeFileSync(EMAIL_DB_PATH, JSON.stringify(emailDatabase, null, 2));
-    log.info('データベースを保存しました');
-  } catch (error) {
-    log.error('データベースの保存エラー:', error);
-  }
-}
 
 export default async function (interaction) {
     if (interaction.type === InteractionType.ModalSubmit) {
@@ -90,9 +52,8 @@ export default async function (interaction) {
                     const member = await interaction.guild.members.fetch(userId);
                     await member.roles.add(role);
                     
-                    // メールアドレスをデータベースに保存 - 修正: data.emailを使用
-                    emailDatabase[userId] = data.email;
-                    saveDatabase();
+                    // Firestoreにメールアドレスを保存
+                    await saveEmail(userId, data.email);
                     
                     pendingVerifications.delete(userId);
                     log.info(`ユーザー ${interaction.user.tag} の認証が成功しました。メールアドレス: ${data.email}`);

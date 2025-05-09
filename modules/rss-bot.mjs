@@ -15,6 +15,7 @@ import {
     AttachmentBuilder
 } from 'discord.js';
 import { getConfig } from '../config.mjs';
+import { getRssStatus, updateRssStatus, getAllRssStatus } from '../utils/rss-database.mjs'; // Firestoreを使用
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -184,7 +185,7 @@ async function processRssFeeds(client) {
     log.info('RSSフィードの処理を開始します');
 
     // 現在のRSSステータスを読み込み
-    const rssStatus = await loadRssStatus();
+    const rssStatus = await getAllRssStatus();
     const config = getConfig();
     const rssConfig = config.rssConfig || [];
 
@@ -201,8 +202,8 @@ async function processRssFeeds(client) {
             // RSSフィードを取得
             const feedData = await parser.parseURL(feed.url);
 
-            // このフィードの最後に処理したアイテムのIDまたは日付
-            const lastProcessed = rssStatus[feed.url] || {
+            // このフィードの最後に処理したアイテムのIDまたは日付を取得
+            const lastProcessed = await getRssStatus(feed.url) || {
                 lastItemId: null,
                 lastPublishDate: null
             };
@@ -270,11 +271,12 @@ async function processRssFeeds(client) {
             // 最後に処理したアイテムの情報を更新
             if (newItems.length > 0) {
                 const lastItem = newItems[newItems.length - 1];
-                rssStatus[feed.url] = {
-                    lastItemId: lastItem.guid || null,
-                    lastPublishDate: lastItem.pubDate || null,
-                    lastTitle: lastItem.title || null
-                };
+                await updateRssStatus(
+                    feed.url,
+                    lastItem.guid || null,
+                    lastItem.pubDate || null,
+                    lastItem.title || null
+                );
             }
 
         } catch (error) {
@@ -319,7 +321,7 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
             const description = item.contentSnippet.length > 500
                 ? item.contentSnippet.substring(0, 500).trim() + '...'
                 : item.contentSnippet.trim();
-        
+
             const contentText = new TextDisplayBuilder().setContent(description);
             container.addTextDisplayComponents(contentText);
         }
@@ -410,11 +412,11 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
                 .setURL(item.link)
                 .setStyle(ButtonStyle.Link)
                 .setEmoji('🔗');
-    
-                container.addActionRowComponents(row => {
-                    row.addComponents(readArticleButton);
-                    return row;
-                });
+
+            container.addActionRowComponents(row => {
+                row.addComponents(readArticleButton);
+                return row;
+            });
         }
 
         // Webhookの送信オプション

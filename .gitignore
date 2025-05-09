@@ -3,5 +3,5 @@ data/*.json
 # dev.env.exampleをコピーして
 # ローカル開発ではdev.envにリネームする想定
 *.env
-
+/serviceAccountKey.json
 *.log
