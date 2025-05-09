@@ -1,14 +1,12 @@
-import { initFirebaseAdmin, sanitizeData } from '../firebase-admin-config.mjs';
+import { initFirebaseAdmin, sanitizeData, getCurrentTimestamp } from '../firebase-admin-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
-// 現在の時刻を取得する関数（firebase-admin-configにない場合）
-function getCurrentTimestamp() {
-  return new Date();
-}
+// 関数エイリアスの作成
+const getAdminDb = initFirebaseAdmin;
 
 // __dirnameの代替
 const __filename = fileURLToPath(import.meta.url);
@@ -48,74 +46,57 @@ function parseDate(dateStr) {
  * @returns {Promise<boolean>} - 成功したかどうか
  */
 export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, lastTitle) {
-    if (!feedUrl) {
-        log.error("更新エラー: フィードURLが指定されていません");
-        return false;
-    }
+  if (!feedUrl) {
+    log.error("更新エラー: フィードURLが指定されていません");
+    return false;
+  }
 
-    try {
-        const db = await getAdminDb();
-        
-        // URLをハッシュ化してドキュメントIDにする
-        const docId = getSafeDocumentId(feedUrl);
-        
-        // 日付の処理
-        let parsedDate = null;
-        if (lastPublishDate) {
-            try {
-                parsedDate = new Date(lastPublishDate);
-                // 有効な日付かチェック
-                if (isNaN(parsedDate.getTime())) {
-                    log.warn(`無効な日付フォーマット: ${lastPublishDate}`);
-                    parsedDate = null;
-                } else {
-                    log.debug(`日付処理成功: ${lastPublishDate} -> ${parsedDate.toISOString()}`);
-                }
-            } catch (e) {
-                log.error(`日付処理エラー: ${e.message}`);
-                parsedDate = null;
-            }
-        }
-        
-        // データを安全な形式に整形
-        const data = sanitizeData({
-            feedUrl,
-            lastItemId: lastItemId || null,
-            lastPublishDate: parsedDate,
-            lastTitle: lastTitle || null,
-            updatedAt: getCurrentTimestamp()
-        });
-        
-        // デバッグログでデータを出力
-        log.debug(`保存するRSSデータ (${feedUrl}): ${JSON.stringify(data)}`);
-        
-        // ドキュメント参照
-        const docRef = db.collection(COLLECTION_NAME).doc(docId);
-        
-        // 既存ドキュメントの確認
-        const docSnapshot = await docRef.get();
-        if (docSnapshot.exists) {
-            // 既存のデータがある場合は作成日を保持
-            delete data.createdAt;
-            await docRef.update(data);
-            log.debug(`既存のRSSステータスを更新しました: ${docId}`);
-        } else {
-            // 作成日を設定
-            data.createdAt = getCurrentTimestamp();
-            // 新規作成
-            await docRef.set(data);
-            log.debug(`新しいRSSステータスを作成しました: ${docId}`);
-        }
-        
-        log.info(`RSS ${feedUrl} のステータスを更新しました`);
-        return true;
-    } catch (error) {
-        log.error(`RSSステータス更新エラー (${feedUrl}): ${error.message}`);
-        if (error.stack) {
-            log.error(`スタックトレース: ${error.stack}`);
-        }
-        throw error;
+  try {
+    const db = await getAdminDb();
+    
+    // URLをハッシュ化してドキュメントIDにする
+    const docId = getSafeDocumentId(feedUrl);
+    
+    // 日付の処理
+    const parsedDate = parseDate(lastPublishDate);
+    
+    // データを安全な形式に整形
+    const data = sanitizeData({
+      feedUrl,
+      lastItemId: lastItemId || null,
+      lastPublishDate: parsedDate,
+      lastTitle: lastTitle || null,
+      updatedAt: getCurrentTimestamp()
+    });
+    
+    // デバッグログでデータを出力
+    log.debug(`保存するRSSデータ: ${JSON.stringify(data)}`);
+    
+    // ドキュメント参照
+    const docRef = db.collection(COLLECTION_NAME).doc(docId);
+    
+    // 既存ドキュメントの確認
+    const doc = await docRef.get();
+    if (doc.exists) {
+      // 既存のデータがある場合は作成日を保持
+      delete data.createdAt;
+      await docRef.update(data);
+    } else {
+      // 作成日を設定
+      data.createdAt = getCurrentTimestamp();
+      // 新規作成
+      await docRef.set(data);
     }
+    
+    log.info(`RSS ${feedUrl} のステータスを更新しました`);
+    return true;
+  } catch (error) {
+    log.error(`RSSステータス更新エラー (${feedUrl}): ${error.message}`);
+    if (error.stack) {
+      log.error(`スタックトレース: ${error.stack}`);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -124,41 +105,32 @@ export async function updateRssStatus(feedUrl, lastItemId, lastPublishDate, last
  * @returns {Promise<Object|null>} - RSSステータスまたはnull
  */
 export async function getRssStatus(feedUrl) {
-    if (!feedUrl) {
-        log.error("取得エラー: フィードURLが指定されていません");
-        return null;
-    }
+  if (!feedUrl) {
+    log.error("取得エラー: フィードURLが指定されていません");
+    return null;
+  }
 
-    try {
-        const db = await getAdminDb();
-        const docId = getSafeDocumentId(feedUrl);
-        const docRef = db.collection(COLLECTION_NAME).doc(docId);
-        const doc = await docRef.get();
-        
-        if (doc.exists) {
-            const data = doc.data();
-            
-            // 詳細なログを追加
-            log.debug(`RSSステータス取得 (${feedUrl}): ${JSON.stringify(data)}`);
-            
-            // 返却データを安全な形式に整形
-            return {
-                lastItemId: data.lastItemId || null,
-                lastPublishDate: data.lastPublishDate 
-                    ? (data.lastPublishDate instanceof Date 
-                        ? data.lastPublishDate
-                        : new Date(data.lastPublishDate))
-                    : null,
-                lastTitle: data.lastTitle || null
-            };
-        }
-        
-        log.debug(`RSSステータス ${feedUrl} が見つかりませんでした`);
-        return null;
-    } catch (error) {
-        log.error(`RSSステータス取得エラー (${feedUrl}): ${error.message}`);
-        return null;
+  try {
+    const db = await getAdminDb();
+    const docId = getSafeDocumentId(feedUrl);
+    const docRef = db.collection(COLLECTION_NAME).doc(docId);
+    const doc = await docRef.get();
+    
+    if (doc.exists) {
+      const data = doc.data();
+      
+      // 返却データを安全な形式に整形
+      return {
+        lastItemId: data.lastItemId || null,
+        lastPublishDate: data.lastPublishDate,
+        lastTitle: data.lastTitle || null
+      };
     }
+    return null;
+  } catch (error) {
+    log.error(`RSSステータス取得エラー (${feedUrl}): ${error.message}`);
+    return null;
+  }
 }
 
 /**
@@ -167,7 +139,7 @@ export async function getRssStatus(feedUrl) {
  */
 export async function getAllRssStatus() {
   try {
-    const db = await initFirebaseAdmin();
+    const db = await getAdminDb();
     const snapshot = await db.collection(COLLECTION_NAME).get();
     
     const statusObj = {};
@@ -201,7 +173,7 @@ export async function deleteRssStatus(feedUrl) {
   }
 
   try {
-    const db = await initFirebaseAdmin();
+    const db = await getAdminDb();
     const docId = getSafeDocumentId(feedUrl);
     await db.collection(COLLECTION_NAME).doc(docId).delete();
     
@@ -236,7 +208,7 @@ export async function migrateRssStatusToDatabase() {
     let skippedCount = 0;
     
     // Firestoreに挿入
-    const db = await initFirebaseAdmin();
+    const db = await getAdminDb();
     const batch = db.batch();
     let batchCount = 0;
     const MAX_BATCH_SIZE = 500; // Firestoreの最大バッチサイズ
