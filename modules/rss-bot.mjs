@@ -131,7 +131,7 @@ async function processRssFeeds(client) {
     try {
         // 現在のRSSステータスを読み込み (Firestoreから)
         const rssStatus = await getAllRssStatus();
-        log.debug(`RSSステータス読み込み完了: ${Object.keys(rssStatus).length}件`);
+        log.debug(`RSSステータス読み込み完了: ${Object.keys(rssStatus).length}件のフィード情報`);
         
         const config = getConfig();
         const rssConfig = config.rssConfig || [];
@@ -148,39 +148,59 @@ async function processRssFeeds(client) {
 
                 // RSSフィードを取得
                 const feedData = await parser.parseURL(feed.url);
+                log.debug(`フィード ${feed.url} から ${feedData.items.length}件のアイテムを取得`);
 
                 // このフィードの最後に処理したアイテムのIDまたは日付を取得
-                const lastProcessed = rssStatus[feed.url] || {
+                const lastProcessed = await getRssStatus(feed.url) || {
                     lastItemId: null,
-                    lastPublishDate: null
+                    lastPublishDate: null,
+                    lastTitle: null
                 };
                 
                 log.debug(`フィード ${feed.url} の最終処理情報: ${JSON.stringify(lastProcessed)}`);
 
-                // 新しいアイテムをフィルタリング
-                const newItems = feedData.items.filter(item => {
-                    // ユニークIDがある場合はそれを使用
+                // 新しいアイテムをフィルタリング（ロジックを修正）
+                const newItems = [];
+                
+                for (const item of feedData.items) {
+                    let isNew = false;
+
+                    // まず、IDによる比較
                     if (item.guid && lastProcessed.lastItemId) {
-                        return item.guid !== lastProcessed.lastItemId;
+                        isNew = item.guid !== lastProcessed.lastItemId;
+                        log.debug(`アイテム ${item.title} - GUIDによる比較: ${isNew} (${item.guid} vs ${lastProcessed.lastItemId})`);
+                    } 
+                    // 次に日付による比較
+                    else if (item.pubDate && lastProcessed.lastPublishDate) {
+                        const itemDate = new Date(item.pubDate).getTime();
+                        const lastDate = new Date(lastProcessed.lastPublishDate).getTime();
+                        isNew = itemDate > lastDate;
+                        log.debug(`アイテム ${item.title} - 日付による比較: ${isNew} (${new Date(item.pubDate).toISOString()} vs ${new Date(lastProcessed.lastPublishDate).toISOString()})`);
+                    } 
+                    // 最後にタイトルによる比較
+                    else if (item.title && lastProcessed.lastTitle) {
+                        isNew = item.title !== lastProcessed.lastTitle;
+                        log.debug(`アイテム ${item.title} - タイトルによる比較: ${isNew}`);
+                    } 
+                    // どれも比較できない場合は新規とみなす
+                    else {
+                        isNew = true;
+                        log.debug(`アイテム ${item.title} - 比較不能のため新規とみなす`);
                     }
 
-                    // 日付で比較
-                    if (item.pubDate && lastProcessed.lastPublishDate) {
-                        return new Date(item.pubDate) > new Date(lastProcessed.lastPublishDate);
+                    if (isNew) {
+                        newItems.push(item);
                     }
-
-                    // どちらもない場合は新規アイテムとみなす
-                    return true;
-                });
+                }
 
                 // 新しいアイテムを日付順（古い順）にソート
                 newItems.sort((a, b) => {
-                    const dateA = a.pubDate ? new Date(a.pubDate) : new Date(0);
-                    const dateB = b.pubDate ? new Date(b.pubDate) : new Date(0);
+                    const dateA = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+                    const dateB = b.pubDate ? new Date(b.pubDate).getTime() : 0;
                     return dateA - dateB;
                 });
 
-                log.info(`新しいアイテム数: ${newItems.length}`);
+                log.info(`フィード ${feed.url} の新しいアイテム数: ${newItems.length}`);
 
                 // フィードのwebサイトドメインを取得してファビコンを取得
                 const domain = extractDomain(feed.url) || extractDomain(feedData.link);
@@ -189,7 +209,7 @@ async function processRssFeeds(client) {
                 if (domain) {
                     try {
                         faviconUrl = await getFavicon(domain);
-                        log.info(`ファビコン取得成功: ${faviconUrl}`);
+                        log.debug(`ファビコン取得成功: ${faviconUrl}`);
                     } catch (faviconError) {
                         log.error(`ファビコン取得エラー: ${faviconError}`);
                     }
@@ -197,6 +217,8 @@ async function processRssFeeds(client) {
 
                 // 新しいアイテムをチャンネルに送信
                 for (const item of newItems) {
+                    log.debug(`新しいアイテムを送信: ${item.title}`);
+                    
                     // 設定されたすべてのチャンネルに送信
                     for (const channelId of feed.channels) {
                         try {
@@ -206,13 +228,13 @@ async function processRssFeeds(client) {
                                 const webhook = await getWebhookInChannel(channel);
                                 if (webhook) {
                                     await sendRssToWebhook(webhook, item, feed, faviconUrl, feedData.link);
-                                    log.info(`Webhookでアイテムをチャンネル ${channelId} に送信しました: ${item.title}`);
+                                    log.info(`チャンネル ${channelId} にアイテム "${item.title}" を送信しました`);
                                 } else {
                                     log.error(`チャンネル ${channelId} のWebhook取得に失敗しました`);
                                 }
                             }
                         } catch (channelError) {
-                            log.error(`チャンネル ${channelId} へのメッセージ送信エラー:`, channelError);
+                            log.error(`チャンネル ${channelId} へのメッセージ送信エラー: ${channelError.message}`);
                         }
                     }
                 }
@@ -220,17 +242,26 @@ async function processRssFeeds(client) {
                 // 最後に処理したアイテムの情報を更新
                 if (newItems.length > 0) {
                     const lastItem = newItems[newItems.length - 1];
+                    
+                    // 保存前に内容を確認
+                    log.debug(`保存するRSSステータス: URL=${feed.url}, lastItemId=${lastItem.guid || null}, lastPublishDate=${lastItem.pubDate || null}, lastTitle=${lastItem.title || null}`);
+                    
                     await updateRssStatus(
                         feed.url,
                         lastItem.guid || null,
                         lastItem.pubDate || null,
                         lastItem.title || null
                     );
-                    log.info(`フィード ${feed.url} のステータスを更新しました`);
+                    log.info(`フィード ${feed.url} のステータスを更新しました (最新アイテム: ${lastItem.title})`);
+                } else {
+                    log.info(`フィード ${feed.url} に新しいアイテムはありませんでした`);
                 }
 
             } catch (error) {
-                log.error(`フィード ${feed.name} (${feed.url}) の処理中にエラーが発生しました:`, error);
+                log.error(`フィード ${feed.name} (${feed.url}) の処理中にエラーが発生しました: ${error.message}`);
+                if (error.stack) {
+                    log.error(`スタックトレース: ${error.stack}`);
+                }
             }
         }
     } catch (error) {
