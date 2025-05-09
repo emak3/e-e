@@ -6,7 +6,7 @@ import {
     getDocs, 
     deleteDoc, 
     serverTimestamp 
-} from 'firebase/firestore';
+} from 'firebase-admin/firestore';
 import { db } from '../firebase-config.mjs';
 import log from '../logger.mjs';
 import fs from 'fs/promises';

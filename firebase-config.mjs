@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import log from './logger.mjs';
 
 // Firebase設定（Firebase Consoleのプロジェクト設定 > 全般 > アプリに追加 > Webからコピー）
