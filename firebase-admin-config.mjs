@@ -20,7 +20,7 @@ let adminDb = null;
  * Firebase Admin SDKを初期化する関数
  * @returns {FirebaseFirestore.Firestore} - Firestoreインスタンス
  */
-export function getAdminDb() {
+export function initFirebaseAdmin() {
   if (adminDb) {
     return adminDb;
   }
@@ -55,6 +55,14 @@ export function getAdminDb() {
 }
 
 /**
+ * 現在のタイムスタンプを取得する関数
+ * @returns {Date} - 現在の日時
+ */
+export function getCurrentTimestamp() {
+  return new Date();
+}
+
+/**
  * データをFirestore用に整形する関数
  * @param {Object} data - 整形するデータ
  * @returns {Object} - 整形されたデータ
@@ -85,3 +93,6 @@ export function sanitizeData(data) {
   // その他のプリミティブ値はそのまま
   return data;
 }
+
+// 必要な関数をエクスポート
+export { adminDb };
