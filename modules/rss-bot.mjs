@@ -125,14 +125,61 @@ async function getImageFromItem(item) {
 }
 
 // 安全に日付を比較する関数
+function safeFormatDate(date) {
+    if (!date) return 'なし';
+
+    try {
+        if (typeof date === 'string') {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate.getTime())) {
+                return '不正な日付';
+            }
+            return parsedDate.toLocaleString('ja-JP');
+        } else if (date instanceof Date) {
+            if (isNaN(date.getTime())) {
+                return '不正な日付';
+            }
+            return date.toLocaleString('ja-JP');
+        } else if (date._seconds !== undefined && date._nanoseconds !== undefined) {
+            // Firestoreのタイムスタンプ形式
+            const timestamp = new Date(date._seconds * 1000);
+            return timestamp.toLocaleString('ja-JP');
+        }
+        return String(date);
+    } catch (e) {
+        return '日付エラー';
+    }
+}
+
 function safeCompareDate(date1, date2) {
     try {
         // nullやundefinedの場合
         if (!date1 || !date2) return false;
 
         // 日付オブジェクトに変換
-        const d1 = typeof date1 === 'string' ? new Date(date1) : date1;
-        const d2 = typeof date2 === 'string' ? new Date(date2) : date2;
+        let d1, d2;
+
+        if (typeof date1 === 'string') {
+            d1 = new Date(date1);
+        } else if (date1 instanceof Date) {
+            d1 = date1;
+        } else if (date1._seconds !== undefined) {
+            // Firestoreのタイムスタンプ形式
+            d1 = new Date(date1._seconds * 1000);
+        } else {
+            return false;
+        }
+
+        if (typeof date2 === 'string') {
+            d2 = new Date(date2);
+        } else if (date2 instanceof Date) {
+            d2 = date2;
+        } else if (date2._seconds !== undefined) {
+            // Firestoreのタイムスタンプ形式
+            d2 = new Date(date2._seconds * 1000);
+        } else {
+            return false;
+        }
 
         // 有効な日付かどうかチェック
         if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
@@ -181,10 +228,10 @@ async function processRssFeeds(client) {
                 };
 
                 // 安全なログ出力（toISOString()を使わない）
-                log.debug(`フィード ${feed.url} の最終処理情報:` +
-                    ` lastItemId=${lastProcessed.lastItemId || 'なし'},` +
-                    ` lastPublishDate=${safeFormatDate(lastProcessed.lastPublishDate)},` +
-                    ` lastTitle=${lastProcessed.lastTitle || 'なし'}`);
+                log.debug(`フィード ${feed.url} の最終処理情報: ` +
+                    `lastItemId=${lastProcessed.lastItemId || 'なし'}, ` +
+                    `lastPublishDate=${safeFormatDate(lastProcessed.lastPublishDate)}, ` +
+                    `lastTitle=${lastProcessed.lastTitle || 'なし'}`);
 
                 // 新しいアイテムをフィルタリング（ロジックを修正）
                 const newItems = [];
