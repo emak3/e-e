@@ -153,41 +153,58 @@ function safeFormatDate(date) {
 
 function safeCompareDate(date1, date2) {
     try {
+        // デバッグ用のログを追加
+        log.debug(`日付比較: ${JSON.stringify(date1)} vs ${JSON.stringify(date2)}`);
+
         // nullやundefinedの場合
-        if (!date1 || !date2) return false;
+        if (!date1 || !date2) {
+            log.debug('日付比較: どちらかがnullまたはundefined');
+            return false;
+        }
 
         // 日付オブジェクトに変換
         let d1, d2;
 
         if (typeof date1 === 'string') {
             d1 = new Date(date1);
+            log.debug(`date1を文字列から変換: ${d1.toISOString()}`);
         } else if (date1 instanceof Date) {
             d1 = date1;
+            log.debug(`date1はDateオブジェクト: ${d1.toISOString()}`);
         } else if (date1._seconds !== undefined) {
             // Firestoreのタイムスタンプ形式
             d1 = new Date(date1._seconds * 1000);
+            log.debug(`date1はFirestoreタイムスタンプから変換: ${d1.toISOString()}`);
         } else {
+            log.debug(`date1は非対応の形式: ${typeof date1}`);
             return false;
         }
 
         if (typeof date2 === 'string') {
             d2 = new Date(date2);
+            log.debug(`date2を文字列から変換: ${d2.toISOString()}`);
         } else if (date2 instanceof Date) {
             d2 = date2;
+            log.debug(`date2はDateオブジェクト: ${d2.toISOString()}`);
         } else if (date2._seconds !== undefined) {
             // Firestoreのタイムスタンプ形式
             d2 = new Date(date2._seconds * 1000);
+            log.debug(`date2はFirestoreタイムスタンプから変換: ${d2.toISOString()}`);
         } else {
+            log.debug(`date2は非対応の形式: ${typeof date2}`);
             return false;
         }
 
         // 有効な日付かどうかチェック
         if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+            log.debug('日付比較: 無効な日付');
             return false;
         }
 
         // ミリ秒単位で比較
-        return d1.getTime() > d2.getTime();
+        const result = d1.getTime() > d2.getTime();
+        log.debug(`日付比較結果: ${result} (${d1.getTime()} > ${d2.getTime()})`);
+        return result;
     } catch (e) {
         log.error(`日付比較エラー: ${e.message}`);
         return false;
@@ -237,19 +254,23 @@ async function processRssFeeds(client) {
                 const newItems = [];
 
                 for (const item of feedData.items) {
+                    // アイテムの日付をデバッグログに出力
+                    if (item.pubDate) {
+                        log.debug(`アイテム "${item.title}" の日付: ${item.pubDate}`);
+                    }
+
                     let isNew = false;
 
                     // まず、IDによる比較
                     if (item.guid && lastProcessed.lastItemId) {
                         isNew = item.guid !== lastProcessed.lastItemId;
-                        log.debug(`アイテム "${item.title}" - GUIDによる比較: ${isNew ? '新規' : '既存'}`);
+                        log.debug(`アイテム "${item.title}" - GUIDによる比較: ${isNew ? '新規' : '既存'} (${item.guid} vs ${lastProcessed.lastItemId})`);
                     }
                     // 次に日付による比較
                     else if (item.pubDate && lastProcessed.lastPublishDate) {
                         // 安全な日付比較関数を使用
                         isNew = safeCompareDate(item.pubDate, lastProcessed.lastPublishDate);
-                        log.debug(`アイテム "${item.title}" - 日付による比較: ${isNew ? '新規' : '既存'} ` +
-                            `(${safeFormatDate(item.pubDate)} vs ${safeFormatDate(lastProcessed.lastPublishDate)})`);
+                        log.debug(`アイテム "${item.title}" - 日付による比較: ${isNew ? '新規' : '既存'}`);
                     }
                     // 最後にタイトルによる比較
                     else if (item.title && lastProcessed.lastTitle) {
@@ -264,6 +285,7 @@ async function processRssFeeds(client) {
 
                     if (isNew) {
                         newItems.push(item);
+                        log.debug(`アイテム "${item.title}" を新規として追加`);
                     }
                 }
 
@@ -328,20 +350,29 @@ async function processRssFeeds(client) {
                 if (newItems.length > 0) {
                     const lastItem = newItems[newItems.length - 1];
 
-                    // 保存前に内容を確認
-                    log.debug(`保存するRSSステータス: ` +
-                        `URL=${feed.url}, ` +
-                        `lastItemId=${lastItem.guid || 'null'}, ` +
-                        `lastPublishDate=${safeFormatDate(lastItem.pubDate)}, ` +
-                        `lastTitle=${lastItem.title || 'null'}`);
+                    // 保存前にデータのフォーマットを確認
+                    const lastItemId = lastItem.guid || null;
+                    const lastPublishDate = lastItem.pubDate ? new Date(lastItem.pubDate) : null;
+                    const lastTitle = lastItem.title || null;
 
-                    await updateRssStatus(
-                        feed.url,
-                        lastItem.guid || null,
-                        lastItem.pubDate || null,
-                        lastItem.title || null
-                    );
-                    log.info(`フィード ${feed.url} のステータスを更新しました (最新アイテム: ${lastItem.title})`);
+                    // 保存前に内容を確認（詳細ログ）
+                    log.debug(`保存するRSSステータス詳細: ` +
+                        `URL=${feed.url}, ` +
+                        `lastItemId=${lastItemId}, ` +
+                        `lastPublishDate=${lastPublishDate ? lastPublishDate.toISOString() : 'null'}, ` +
+                        `lastTitle=${lastTitle || 'null'}`);
+
+                    try {
+                        await updateRssStatus(
+                            feed.url,
+                            lastItemId,
+                            lastPublishDate,
+                            lastTitle
+                        );
+                        log.info(`フィード ${feed.url} のステータスを更新しました (最新アイテム: ${lastItem.title})`);
+                    } catch (updateError) {
+                        log.error(`フィード ${feed.url} のステータス更新エラー: ${updateError.message}`);
+                    }
                 } else {
                     log.info(`フィード ${feed.url} に新しいアイテムはありませんでした`);
                 }
