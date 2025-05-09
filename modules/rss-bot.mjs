@@ -15,10 +15,6 @@ import {
     AttachmentBuilder
 } from 'discord.js';
 import { getConfig } from '../config.mjs';
-import { getRssStatus, updateRssStatus, getAllRssStatus } from '../utils/rss-database.mjs'; // Firestoreを使用
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import log from "../logger.mjs";
 import Parser from 'rss-parser';
 import cron from 'node-cron';
@@ -26,14 +22,12 @@ import axios from 'axios';
 import getWebhookInChannel from "../utils/webhookGet.mjs";
 import { getFavicon } from './favicon-utils.mjs';
 import { JSDOM } from 'jsdom';
-
-// __dirnameの代替
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// データディレクトリパス
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const RSS_STATUS_FILE = path.join(DATA_DIR, 'rss-status.json');
+// Firestoreとの連携用に追加
+import { 
+    getRssStatus, 
+    updateRssStatus, 
+    getAllRssStatus 
+} from '../utils/rss-database.mjs';
 
 // RSSパーサーの設定
 const parser = new Parser({
@@ -46,56 +40,6 @@ const parser = new Parser({
         ]
     }
 });
-
-// RSSステータスデータを読み込む関数
-async function loadRssStatus() {
-    try {
-        // データディレクトリが存在しない場合は作成
-        try {
-            await fs.access(DATA_DIR);
-        } catch (error) {
-            await fs.mkdir(DATA_DIR, { recursive: true });
-            log.info('データディレクトリを作成しました');
-        }
-
-        // RSSステータスファイルが存在するか確認
-        try {
-            await fs.access(RSS_STATUS_FILE);
-            // ファイルが存在する場合は読み込む
-            const data = await fs.readFile(RSS_STATUS_FILE, 'utf-8');
-            return JSON.parse(data);
-        } catch (error) {
-            // ファイルが存在しない場合は新規作成して空のオブジェクトを返す
-            const initialData = {};
-            await fs.writeFile(RSS_STATUS_FILE, JSON.stringify(initialData, null, 2));
-            log.info('RSSステータスファイルを新規作成しました');
-            return initialData;
-        }
-    } catch (error) {
-        log.error('RSSステータスの読み込みエラー:', error);
-        return {};
-    }
-}
-
-// RSSステータスデータを保存する関数
-async function saveRssStatus(statusData) {
-    try {
-        await fs.writeFile(RSS_STATUS_FILE, JSON.stringify(statusData, null, 2));
-        log.info('RSSステータスを保存しました');
-    } catch (error) {
-        log.error('RSSステータスの保存エラー:', error);
-    }
-}
-
-// URLからドメインを抽出する関数
-function extractDomain(url) {
-    try {
-        const urlObj = new URL(url);
-        return urlObj.hostname;
-    } catch (error) {
-        return null;
-    }
-}
 
 // WebページからOGP画像を取得する関数
 async function getOgImage(url) {
@@ -184,108 +128,127 @@ async function getImageFromItem(item) {
 async function processRssFeeds(client) {
     log.info('RSSフィードの処理を開始します');
 
-    // 現在のRSSステータスを読み込み
-    const rssStatus = await getAllRssStatus();
-    const config = getConfig();
-    const rssConfig = config.rssConfig || [];
+    try {
+        // 現在のRSSステータスを読み込み (Firestoreから)
+        const rssStatus = await getAllRssStatus();
+        log.debug(`RSSステータス読み込み完了: ${Object.keys(rssStatus).length}件`);
+        
+        const config = getConfig();
+        const rssConfig = config.rssConfig || [];
 
-    if (rssConfig.length === 0) {
-        log.info('RSSフィードが設定されていません');
-        return;
-    }
+        if (rssConfig.length === 0) {
+            log.info('RSSフィードが設定されていません');
+            return;
+        }
 
-    // 各RSSフィードを処理
-    for (const feed of rssConfig) {
-        try {
-            log.info(`フィード処理: ${feed.name} (${feed.url})`);
+        // 各RSSフィードを処理
+        for (const feed of rssConfig) {
+            try {
+                log.info(`フィード処理: ${feed.name} (${feed.url})`);
 
-            // RSSフィードを取得
-            const feedData = await parser.parseURL(feed.url);
+                // RSSフィードを取得
+                const feedData = await parser.parseURL(feed.url);
 
-            // このフィードの最後に処理したアイテムのIDまたは日付を取得
-            const lastProcessed = await getRssStatus(feed.url) || {
-                lastItemId: null,
-                lastPublishDate: null
-            };
+                // このフィードの最後に処理したアイテムのIDまたは日付を取得
+                const lastProcessed = rssStatus[feed.url] || {
+                    lastItemId: null,
+                    lastPublishDate: null
+                };
+                
+                log.debug(`フィード ${feed.url} の最終処理情報: ${JSON.stringify(lastProcessed)}`);
 
-            // 新しいアイテムをフィルタリング
-            const newItems = feedData.items.filter(item => {
-                // ユニークIDがある場合はそれを使用
-                if (item.guid && lastProcessed.lastItemId) {
-                    return item.guid !== lastProcessed.lastItemId;
-                }
+                // 新しいアイテムをフィルタリング
+                const newItems = feedData.items.filter(item => {
+                    // ユニークIDがある場合はそれを使用
+                    if (item.guid && lastProcessed.lastItemId) {
+                        return item.guid !== lastProcessed.lastItemId;
+                    }
 
-                // 日付で比較
-                if (item.pubDate && lastProcessed.lastPublishDate) {
-                    return new Date(item.pubDate) > new Date(lastProcessed.lastPublishDate);
-                }
+                    // 日付で比較
+                    if (item.pubDate && lastProcessed.lastPublishDate) {
+                        return new Date(item.pubDate) > new Date(lastProcessed.lastPublishDate);
+                    }
 
-                // どちらもない場合は新規アイテムとみなす
-                return true;
-            });
+                    // どちらもない場合は新規アイテムとみなす
+                    return true;
+                });
 
-            // 新しいアイテムを日付順（古い順）にソート
-            newItems.sort((a, b) => {
-                const dateA = a.pubDate ? new Date(a.pubDate) : new Date(0);
-                const dateB = b.pubDate ? new Date(b.pubDate) : new Date(0);
-                return dateA - dateB;
-            });
+                // 新しいアイテムを日付順（古い順）にソート
+                newItems.sort((a, b) => {
+                    const dateA = a.pubDate ? new Date(a.pubDate) : new Date(0);
+                    const dateB = b.pubDate ? new Date(b.pubDate) : new Date(0);
+                    return dateA - dateB;
+                });
 
-            log.info(`新しいアイテム数: ${newItems.length}`);
+                log.info(`新しいアイテム数: ${newItems.length}`);
 
-            // フィードのwebサイトドメインを取得してファビコンを取得
-            const domain = extractDomain(feed.url) || extractDomain(feedData.link);
-            let faviconUrl = null;
+                // フィードのwebサイトドメインを取得してファビコンを取得
+                const domain = extractDomain(feed.url) || extractDomain(feedData.link);
+                let faviconUrl = null;
 
-            if (domain) {
-                try {
-                    faviconUrl = await getFavicon(domain);
-                    log.info(`ファビコン取得成功: ${faviconUrl}`);
-                } catch (faviconError) {
-                    log.error(`ファビコン取得エラー: ${faviconError}`);
-                }
-            }
-
-            // 新しいアイテムをチャンネルに送信
-            for (const item of newItems) {
-                // 設定されたすべてのチャンネルに送信
-                for (const channelId of feed.channels) {
+                if (domain) {
                     try {
-                        const channel = await client.channels.fetch(channelId);
-                        if (channel) {
-                            // webhookを取得または作成
-                            const webhook = await getWebhookInChannel(channel);
-                            if (webhook) {
-                                await sendRssToWebhook(webhook, item, feed, faviconUrl, feedData.link);
-                                log.info(`Webhookでアイテムをチャンネル ${channelId} に送信しました: ${item.title}`);
-                            } else {
-                                log.error(`チャンネル ${channelId} のWebhook取得に失敗しました`);
-                            }
-                        }
-                    } catch (channelError) {
-                        log.error(`チャンネル ${channelId} へのメッセージ送信エラー:`, channelError);
+                        faviconUrl = await getFavicon(domain);
+                        log.info(`ファビコン取得成功: ${faviconUrl}`);
+                    } catch (faviconError) {
+                        log.error(`ファビコン取得エラー: ${faviconError}`);
                     }
                 }
-            }
 
-            // 最後に処理したアイテムの情報を更新
-            if (newItems.length > 0) {
-                const lastItem = newItems[newItems.length - 1];
-                await updateRssStatus(
-                    feed.url,
-                    lastItem.guid || null,
-                    lastItem.pubDate || null,
-                    lastItem.title || null
-                );
-            }
+                // 新しいアイテムをチャンネルに送信
+                for (const item of newItems) {
+                    // 設定されたすべてのチャンネルに送信
+                    for (const channelId of feed.channels) {
+                        try {
+                            const channel = await client.channels.fetch(channelId);
+                            if (channel) {
+                                // webhookを取得または作成
+                                const webhook = await getWebhookInChannel(channel);
+                                if (webhook) {
+                                    await sendRssToWebhook(webhook, item, feed, faviconUrl, feedData.link);
+                                    log.info(`Webhookでアイテムをチャンネル ${channelId} に送信しました: ${item.title}`);
+                                } else {
+                                    log.error(`チャンネル ${channelId} のWebhook取得に失敗しました`);
+                                }
+                            }
+                        } catch (channelError) {
+                            log.error(`チャンネル ${channelId} へのメッセージ送信エラー:`, channelError);
+                        }
+                    }
+                }
 
-        } catch (error) {
-            log.error(`フィード ${feed.name} (${feed.url}) の処理中にエラーが発生しました:`, error);
+                // 最後に処理したアイテムの情報を更新
+                if (newItems.length > 0) {
+                    const lastItem = newItems[newItems.length - 1];
+                    await updateRssStatus(
+                        feed.url,
+                        lastItem.guid || null,
+                        lastItem.pubDate || null,
+                        lastItem.title || null
+                    );
+                    log.info(`フィード ${feed.url} のステータスを更新しました`);
+                }
+
+            } catch (error) {
+                log.error(`フィード ${feed.name} (${feed.url}) の処理中にエラーが発生しました:`, error);
+            }
+        }
+    } catch (error) {
+        log.error(`RSSフィード処理中にエラーが発生しました: ${error.message}`);
+        if (error.stack) {
+            log.error(`スタックトレース: ${error.stack}`);
         }
     }
+}
 
-    // 更新されたステータスを保存
-    await saveRssStatus(rssStatus);
+// URLからドメインを抽出する関数
+function extractDomain(url) {
+    try {
+        const urlObj = new URL(url);
+        return urlObj.hostname;
+    } catch (error) {
+        return null;
+    }
 }
 
 // RSSアイテムをWebhookに送信する関数 (ComponentsV2対応、SeparatorSpacingSize使用)
@@ -321,7 +284,7 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
             const description = item.contentSnippet.length > 500
                 ? item.contentSnippet.substring(0, 500).trim() + '...'
                 : item.contentSnippet.trim();
-
+        
             const contentText = new TextDisplayBuilder().setContent(description);
             container.addTextDisplayComponents(contentText);
         }
@@ -412,11 +375,11 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
                 .setURL(item.link)
                 .setStyle(ButtonStyle.Link)
                 .setEmoji('🔗');
-
-            container.addActionRowComponents(row => {
-                row.addComponents(readArticleButton);
-                return row;
-            });
+    
+                container.addActionRowComponents(row => {
+                    row.addComponents(readArticleButton);
+                    return row;
+                });
         }
 
         // Webhookの送信オプション
@@ -441,14 +404,14 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
                     } else {
                         log.warn(`無効なファビコン形式: ${contentType}`);
                         // Google Faviconサービスを代替として使用
-                        const domain = extractDomain(feed.url) || extractDomain(feedData.link);
+                        const domain = extractDomain(feed.url) || extractDomain(feedLink);
                         webhookOptions.avatarURL = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
                     }
                 }
             } catch (faviconError) {
                 log.error(`ファビコン検証エラー: ${faviconError.message}`);
                 // エラー時は代替アイコンを使用
-                const domain = extractDomain(feed.url) || extractDomain(feedData.link);
+                const domain = extractDomain(feed.url) || extractDomain(feedLink);
                 if (domain) {
                     webhookOptions.avatarURL = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
                 }
@@ -459,8 +422,10 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
         await webhook.send(webhookOptions);
 
     } catch (error) {
-        log.error('RSSメッセージ作成/送信エラー:', error);
-        log.error(error.stack);
+        log.error(`RSSメッセージ作成/送信エラー: ${error.message}`);
+        if (error.stack) {
+            log.error(`スタックトレース: ${error.stack}`);
+        }
 
         // エラー時のフォールバック: シンプルなメッセージ
         try {
@@ -469,7 +434,7 @@ async function sendRssToWebhook(webhook, item, feed, faviconUrl, feedLink) {
                 content: `**${item.title}**\n${item.link || ''}`,
             });
         } catch (fallbackError) {
-            log.error('フォールバックメッセージ送信エラー:', fallbackError);
+            log.error(`フォールバックメッセージ送信エラー: ${fallbackError.message}`);
         }
     }
 }
@@ -491,7 +456,10 @@ export async function startRssBot(client) {
 
         return true;
     } catch (error) {
-        log.error('RSSボット起動エラー:', error);
+        log.error(`RSSボット起動エラー: ${error.message}`);
+        if (error.stack) {
+            log.error(`スタックトレース: ${error.stack}`);
+        }
         return false;
     }
 }
@@ -514,7 +482,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
             await startRssBot(client);
 
         } catch (error) {
-            log.error('RSS単独実行エラー:', error);
+            log.error(`RSS単独実行エラー: ${error.message}`);
+            if (error.stack) {
+                log.error(`スタックトレース: ${error.stack}`);
+            }
             process.exit(1);
         }
     });
